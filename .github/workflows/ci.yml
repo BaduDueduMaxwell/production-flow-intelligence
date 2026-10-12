@@ -21,7 +21,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip
 
       - name: Compile Python modules
         run: python -m compileall -q python tests
@@ -38,8 +38,31 @@ jobs:
           PY
 
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
 
       - name: Check SQL files are non-empty
         run: |
           test -n "$(find bigquery -type f -name '*.sql' -size +0c -print -quit)"
+
+      - name: Check public documentation boundary
+        run: |
+          test "$(git ls-files '*.md' | wc -l | tr -d ' ')" = "1"
+          test "$(git ls-files '*.md')" = "README.md"
+
+      - name: Check runtime files are not tracked
+        run: |
+          ! git ls-files | grep -E '(^|/)(n8n/data/|.*\.sqlite(-.*)?$|.*\.log$|\.env$|__pycache__/|.*\.pyc$)'
+
+      - name: Scan tracked source for obvious secrets
+        run: |
+          ! git grep -n -I -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}' -- ':!README.md'
+
+      - name: Check README references required setup assets
+        run: |
+          grep -F 'n8n/workflows/ingest-events-local.json' README.md
+          grep -F 'n8n/workflows/ingest-events.json' README.md
+          grep -F 'n8n/workflows/detect-delays.json' README.md
+          grep -F 'v_dashboard_overview' README.md
+          grep -F 'v_data_quality_overview' README.md
+          grep -F 'v_data_quality_detail' README.md
+          grep -F 'v_delayed_orders' README.md
