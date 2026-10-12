@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.venv/
+node_modules/
+*.pyc
+n8n/data/
+
+# Keep the public repository focused on the runnable source and README.
+*.md
+!README.md
+
+# Local build and deployment output.
+dist/
+artifacts/
