@@ -1,8 +1,8 @@
 # Production Flow Intelligence
 
-The prototype uses simulated fashion and merchandise orders: hoodies, T-shirts, tote bags, caps, sweatshirts, polo shirts, and canvas jackets. Product fields enrich the existing order histories; they do not represent THE/STUDIO production data.
+The prototype uses simulated fashion and merchandise orders: hoodies, T-shirts, tote bags, caps, sweatshirts, polo shirts, and canvas jackets. Product fields enrich the existing order histories; they are not production data.
 
-An independent, simulated portfolio prototype for THE/STUDIO's Data and Automation Systems Builder role.
+An independent portfolio prototype for operational data and workflow automation.
 
 This repository contains deterministic synthetic fixtures, BigQuery DDL and views, importable n8n workflows, a constrained Gemini adapter, and local tests. Cloud verification is reported only where reproducible execution evidence is available.
 
