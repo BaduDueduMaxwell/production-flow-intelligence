@@ -1,0 +1,35 @@
+name: Deploy workflow artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Artifact version, for example v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build reviewable deployment bundle
+        run: |
+          mkdir -p artifacts/${{ inputs.version }}
+          cp -R n8n/workflows bigquery artifacts/${{ inputs.version }}/
+          cp README.md artifacts/${{ inputs.version }}/
+          tar -czf artifacts/production-flow-intelligence-${{ inputs.version }}.tar.gz \
+            -C artifacts/${{ inputs.version }} .
+
+      - name: Publish deployment bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: Production Flow Intelligence ${{ inputs.version }}
+          files: artifacts/production-flow-intelligence-${{ inputs.version }}.tar.gz
+          generate_release_notes: true
