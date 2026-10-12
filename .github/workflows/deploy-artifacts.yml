@@ -21,8 +21,8 @@ jobs:
       - name: Build reviewable deployment bundle
         run: |
           mkdir -p artifacts/${{ inputs.version }}
-          cp -R n8n/workflows bigquery artifacts/${{ inputs.version }}/
-          cp README.md artifacts/${{ inputs.version }}/
+          cp -R n8n/workflows bigquery python tests artifacts/${{ inputs.version }}/
+          cp README.md docker-compose.yml .env.example artifacts/${{ inputs.version }}/
           tar -czf artifacts/production-flow-intelligence-${{ inputs.version }}.tar.gz \
             -C artifacts/${{ inputs.version }} .
 
