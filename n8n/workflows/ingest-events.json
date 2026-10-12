@@ -1,0 +1,105 @@
+{
+  "name": "Production Flow Intelligence - Ingest Events",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": "={{$env.GOOGLE_CLOUD_PROJECT}}",
+        "datasetId": "={{$env.BIGQUERY_DATASET}}",
+        "tableId": "rejected_events",
+        "columns": "quarantine_id,event_id,order_id,received_at,source,ingestion_run_id,validation_status,issue_codes,issue_details,raw_payload",
+        "values": "={{'quarantine:' + ($json.event?.event_id ?? $execution.id)}},={{$json.event?.event_id ?? null}},={{$json.event?.order_id ?? null}},={{$json.event?.ingested_at ?? new Date().toISOString()}},={{$json.event?.source ?? null}},={{$json.event?.ingestion_run_id ?? $execution.id}},rejected,={{JSON.stringify($json.issues)}},={{$json.issues.join('; ')}},={{JSON.stringify($json.event ?? {})}}"
+      },
+      "id": "quarantine-event",
+      "name": "Quarantine rejected event",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [980, 420]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "production-flow/events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-ingest",
+      "name": "Receive simulated event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "production-flow-events"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst required = ['event_id','order_id','stage','event_type','event_timestamp','source'];\nconst missing = required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');\nconst allowedStages = ['order','supplier_sourcing','quotation','sampling','customer_approval','production','fulfillment'];\nconst allowedTypes = ['order_created','stage_entered','stage_exited','order_cancelled'];\nconst parsed = Date.parse(body.event_timestamp);\nconst issues = [];\nif (missing.length) issues.push(`missing_fields:${missing.join(',')}`);\nif (!allowedStages.includes(body.stage)) issues.push('invalid_stage');\nif (!allowedTypes.includes(body.event_type)) issues.push('invalid_event_type');\nif (Number.isNaN(parsed)) issues.push('invalid_timestamp');\nconst canonical = JSON.stringify(body, Object.keys(body).sort());\nlet hash = 2166136261;\nfor (let i = 0; i < canonical.length; i++) hash = Math.imul(hash ^ canonical.charCodeAt(i), 16777619);\nconst normalized = { ...body, event_timestamp: Number.isNaN(parsed) ? body.event_timestamp : new Date(parsed).toISOString(), ingested_at: new Date().toISOString(), payload_hash: body.payload_hash ?? (hash >>> 0).toString(16), ingestion_run_id: $execution.id, validation_status: issues.length ? 'rejected' : 'pending_state_machine' };\nreturn [{ json: { valid: issues.length === 0, issues, event: normalized } }];"
+      },
+      "id": "validate-event",
+      "name": "Validate and normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": { "boolean": [{ "value1": "={{$json.valid}}", "operation": "isTrue" }] }
+      },
+      "id": "valid-check",
+      "name": "Valid event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": "={{$env.GOOGLE_CLOUD_PROJECT}}",
+        "datasetId": "={{$env.BIGQUERY_DATASET}}",
+        "tableId": "raw_events",
+        "columns": "event_id,order_id,stage,event_type,event_timestamp,ingested_at,supplier_id,source,payload_hash,ingestion_run_id,validation_status",
+        "values": "={{$json.event.event_id}},={{$json.event.order_id}},={{$json.event.stage}},={{$json.event.event_type}},={{$json.event.event_timestamp}},={{$json.event.ingested_at}},={{$json.event.supplier_id ?? null}},={{$json.event.source}},={{$json.event.payload_hash}},={{$json.event.ingestion_run_id}},={{$json.event.validation_status}}"
+      },
+      "id": "insert-event",
+      "name": "Insert raw event",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [980, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, validation_status: $json.event.validation_status, event_id: $json.event.event_id } }}",
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Accepted response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1220, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: false, issues: $json.issues, event_id: $json.event?.event_id ?? null } }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "respond-rejected",
+      "name": "Rejected response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1220, 420]
+    }
+  ],
+  "connections": {
+    "Receive simulated event": { "main": [[{ "node": "Validate and normalize", "type": "main", "index": 0 }]] },
+    "Validate and normalize": { "main": [[{ "node": "Valid event?", "type": "main", "index": 0 }]] },
+    "Valid event?": { "main": [[{ "node": "Insert raw event", "type": "main", "index": 0 }], [{ "node": "Quarantine rejected event", "type": "main", "index": 0 }]] },
+    "Insert raw event": { "main": [[{ "node": "Accepted response", "type": "main", "index": 0 }]] }
+    ,"Quarantine rejected event": { "main": [[{ "node": "Rejected response", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "milestone-a-ingest-v1",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

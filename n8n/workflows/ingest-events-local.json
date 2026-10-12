@@ -1,0 +1,19 @@
+{
+  "name": "Production Flow Intelligence - Local Ingest Mock",
+  "nodes": [
+    {
+      "parameters": {"httpMethod":"POST","path":"production-flow/events-local","responseMode":"responseNode","options":{}},
+      "id":"local-webhook","name":"Receive local event","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[240,300],"webhookId":"production-flow-events-local"
+    },
+    {
+      "parameters": {"jsCode":"const body = $json.body ?? $json;\nconst stages = ['order','supplier_sourcing','quotation','sampling','customer_approval','production','fulfillment'];\nconst types = ['order_created','stage_entered','stage_exited','order_cancelled'];\nconst issues = [];\nfor (const key of ['event_id','order_id','stage','event_type','event_timestamp','source']) if (!body[key]) issues.push(`missing:${key}`);\nif (!stages.includes(body.stage)) issues.push('invalid_stage');\nif (!types.includes(body.event_type)) issues.push('invalid_event_type');\nconst parsed = Date.parse(body.event_timestamp);\nif (Number.isNaN(parsed)) issues.push('invalid_timestamp');\nconst canonical = JSON.stringify(body, Object.keys(body).sort());\nlet hash = 2166136261;\nfor (let i = 0; i < canonical.length; i++) hash = Math.imul(hash ^ canonical.charCodeAt(i), 16777619);\nconst event = {...body, event_timestamp: Number.isNaN(parsed) ? body.event_timestamp : new Date(parsed).toISOString(), payload_hash: body.payload_hash ?? (hash >>> 0).toString(16)};\nconst accepted = issues.length === 0;\nconst store = $getWorkflowStaticData('global');\nstore.events = store.events ?? [];\nlet response;\nif (accepted) {\n  const duplicate = store.events.some((row) => row.event_id === event.event_id && row.payload_hash === event.payload_hash);\n  const row = {event_id:event.event_id, order_id:event.order_id, stage:event.stage, event_type:event.event_type, event_timestamp:event.event_timestamp, payload_hash:event.payload_hash, duplicate_delivery:duplicate, captured_at:new Date().toISOString()};\n  store.events.push(row);\n  response = {accepted:true, storage:'local_mock', duplicate_delivery:duplicate, event_id:event.event_id, captured_events:store.events.length, row};\n} else {\n  response = {accepted:false, storage:'local_mock', issues, event_id:event.event_id ?? null};\n}\nreturn [{json:{...response, http_status: accepted ? 200 : 400}}];"},
+      "id":"local-process","name":"Validate and capture locally","type":"n8n-nodes-base.code","typeVersion":2,"position":[560,300]
+    },
+    {
+      "parameters":{"respondWith":"json","responseBody":"={{$json}}","options":{"responseCode":"={{$json.http_status}}"}},
+      "id":"local-response","name":"Return local response","type":"n8n-nodes-base.respondToWebhook","typeVersion":1,"position":[880,300]
+    }
+  ],
+  "connections":{"Receive local event":{"main":[[{"node":"Validate and capture locally","type":"main","index":0}]]},"Validate and capture locally":{"main":[[{"node":"Return local response","type":"main","index":0}]]}},
+  "active":false,"settings":{"executionOrder":"v1"},"versionId":"local-mock-v2","meta":{"templateCredsSetupCompleted":true},"tags":[]
+}

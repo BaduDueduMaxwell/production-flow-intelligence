@@ -1,0 +1,57 @@
+{
+  "name": "Production Flow Intelligence - Detect Delays",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] } },
+      "id": "schedule",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "projectId": "={{$env.GOOGLE_CLOUD_PROJECT}}",
+        "query": "SELECT order_id, stage, stage_entered_at, threshold_hours, elapsed_hours, alert_key FROM `{{ $env.GOOGLE_CLOUD_PROJECT }}.{{ $env.BIGQUERY_DATASET }}.v_delayed_orders`"
+      },
+      "id": "query-delays",
+      "name": "Query delayed orders",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item) => ({ json: { ...item.json, notification_status: 'simulated', status: 'open', notification_attempts: 1, last_seen_at: new Date().toISOString() } }));"
+      },
+      "id": "prepare-alerts",
+      "name": "Prepare deterministic alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "projectId": "={{$env.GOOGLE_CLOUD_PROJECT}}",
+        "query": "MERGE `{{ $env.GOOGLE_CLOUD_PROJECT }}.{{ $env.BIGQUERY_DATASET }}.alerts` T USING (SELECT alert_key, order_id, stage, CURRENT_TIMESTAMP() AS detected_at, CURRENT_TIMESTAMP() AS last_seen_at FROM `{{ $env.GOOGLE_CLOUD_PROJECT }}.{{ $env.BIGQUERY_DATASET }}.v_delayed_orders`) S ON T.alert_key = S.alert_key AND T.status = 'open' WHEN MATCHED THEN UPDATE SET last_seen_at = S.last_seen_at WHEN NOT MATCHED THEN INSERT (alert_key, order_id, stage, condition_type, detected_at, last_seen_at, status, notification_status, notification_attempts, last_error, resolved_at) VALUES (S.alert_key, S.order_id, S.stage, 'stage_delay', S.detected_at, S.last_seen_at, 'open', 'simulated', 0, NULL, NULL);"
+      },
+      "id": "merge-alerts",
+      "name": "Canonicalize alert records",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": { "main": [[{ "node": "Query delayed orders", "type": "main", "index": 0 }]] },
+    "Query delayed orders": { "main": [[{ "node": "Prepare deterministic alerts", "type": "main", "index": 0 }]] },
+    "Prepare deterministic alerts": { "main": [[{ "node": "Canonicalize alert records", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "maxConcurrency": 1 },
+  "versionId": "milestone-a-delay-v1",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}
